@@ -53,7 +53,7 @@ rtabmap_slam:
     # ---- Registration strategy ----
     # Strategy 2 = Vis+ICP: visual features untuk initial estimate,
     # ICP LiDAR untuk fine correction (paling robust indoor)
-    Reg/Strategy: "1"
+    Reg/Strategy: "2"
     Reg/Force3DoF: "true"          # 2D floor: x, y, yaw saja
 
     # ICP params (LiDAR fine correction)
