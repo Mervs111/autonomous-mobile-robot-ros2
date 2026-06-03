@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_description</name>
+  <version>0.1.0</version>
+  <description>
+    URDF/Xacro description untuk AMR 4WD-Ackermann Indoor Platform.
+    Berisi: chassis, 4 roda, 2 steering links, LiDAR (RPLIDAR C1), Camera (RealSense D455).
+    TANPA IMU dan GPS (sesuai konfigurasi indoor v1.0).
+  </description>
+  <maintainer email="muhammadalazharf@gmail.com">Muhammad Al Azhar Faradis</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

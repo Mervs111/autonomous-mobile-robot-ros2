@@ -1,0 +1,105 @@
+# =====================================================================
+# AMR Mobile Robot Ackermann - RTAB-Map (Mode SYNC: RGB-D + LiDAR scan)
+# =====================================================================
+# Source of truth: http://wiki.ros.org/rtabmap_ros (params for ROS 2)
+#
+# Mode SYNC = ApproximateTimeSynchronizer antar RGB, Depth, dan Scan.
+# Slop = 0.05 s. Tujuan: konstrain geometris dari LiDAR menyelamatkan
+# RGB-D di area textureless (dinding cat polos lab ITS).
+#
+# Optimasi untuk konteks AMR indoor:
+#   - Loop closure aggressive (Mem/RehearsalSimilarity 0.45)
+#   - Subsample point cloud agar Foxglove tetap responsive (Voxel 0.05)
+#   - Octomap publishing disabled (Foxglove tidak butuh, save CPU)
+#   - Bayes filter prediction = false (wheel odometry kita tidak akurat enough)
+# =====================================================================
+
+rtabmap_slam:
+  ros__parameters:
+
+    # ---- Frames ----
+    frame_id: base_link
+    map_frame_id: map
+    odom_frame_id: odom
+
+    # ---- Input topics (akan di-remap di launch file) ----
+    subscribe_depth: false        # SYNC mode: subscribe rgbd_image (output rgbd_sync)
+    subscribe_rgbd:  true         # consume rgbd_image dari rgbd_sync node
+    subscribe_scan:  true         # konstrain dari LiDAR
+    subscribe_odom_info: false
+    approx_sync: true             # SYNC mode aktif
+    approx_sync_max_interval: 0.05  # slop = 50 ms (sesuai recommendation)
+    queue_size: 30
+    sync_queue_size: 30
+
+    # ---- TF & timing ----
+    tf_delay: 0.05
+    tf_tolerance: 0.1
+    wait_for_transform: 0.2
+    publish_tf: true              # publish map -> odom
+
+    # ---- Database management ----
+    database_path: ~/.ros/rtabmap.db
+    Mem/IncrementalMemory: "true"      # mapping mode (false utk localization)
+    Mem/InitWMWithAllNodes: "false"
+    Mem/SaveDepth16Format: "true"
+    Mem/RehearsalSimilarity: "0.45"    # threshold deteksi node duplikat
+    Mem/STMSize: "30"
+
+    # ---- Registration parameters ----
+    Reg/Strategy: "1"                  # 0=Vis, 1=ICP, 2=Vis+ICP (gabungkan visual+scan)
+    Reg/Force3DoF: "true"              # 2D floor: x, y, yaw saja (ground vehicle)
+    Icp/PointToPlane: "true"
+    Icp/Iterations: "10"
+    Icp/VoxelSize: "0.05"
+    Icp/MaxCorrespondenceDistance: "0.1"
+    Icp/Epsilon: "0.001"
+    Icp/MaxTranslation: "1.0"
+    Icp/MaxRotation: "0.78"
+
+    # ---- Visual features (untuk loop closure via RGB) ----
+    Vis/FeatureType: "8"               # 8=GFTT/BRIEF (light, cocok CPU)
+    Vis/MaxFeatures: "1000"
+    Vis/MinInliers: "15"
+
+    # ---- Local map ----
+    Grid/FromDepth: "true"
+    Grid/RangeMax: "5.0"
+    Grid/CellSize: "0.05"
+    Grid/RayTracing: "true"
+    Grid/3D: "true"
+    Grid/NormalsSegmentation: "false"
+    Grid/MaxObstacleHeight: "1.5"
+    Grid/MaxGroundHeight: "0.05"
+    Grid/MinGroundHeight: "-0.05"
+
+    # ---- Loop closure ----
+    Rtabmap/LoopThr: "0.11"
+    Rtabmap/DetectionRate: "1.0"       # cek loop closure 1 Hz (hemat CPU NUC)
+    Rtabmap/TimeThr: "700"             # max ms per frame (skip kalau over)
+    RGBD/NeighborLinkRefining: "true"
+    RGBD/ProximityBySpace: "true"
+    RGBD/AngularUpdate: "0.05"
+    RGBD/LinearUpdate: "0.05"
+    RGBD/OptimizeFromGraphEnd: "false"
+
+    # ---- Publishing ----
+    publish_cloud_map: false           # publish_cloud_obstacles cukup
+    publish_cloud_obstacles: true
+    publish_cloud_ground: true
+    publish_grid_map: true             # untuk overlay 2D di Foxglove
+
+    # ---- Logging level ----
+    Mem/UseOdomFeatures: "false"
+    Optimizer/GravitySigma: "0"        # tidak ada IMU di sistem
+
+
+# =====================================================================
+# rtabmap_sync/rgbd_sync_node config (depth-color synchronizer)
+# =====================================================================
+rgbd_sync:
+  ros__parameters:
+    approx_sync: true
+    approx_sync_max_interval: 0.03     # 30 ms toleransi antara depth & color
+    queue_size: 30
+    depth_scale: 1.0

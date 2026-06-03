@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_3d_mapping</name>
+  <version>0.1.0</version>
+  <description>
+    RTAB-Map 3D SLAM integration untuk Mobile Robot Ackermann Indoor Platform.
+
+    Pipeline (mode SYNC):
+      RealSense D455 (RGB + Depth) + RPLIDAR C1 (scan) + wheel odometry
+        -> ApproximateTimeSynchronizer (slop 0.05 s)
+          -> RTAB-Map rgbd_sync -> rtabmap_slam
+            -> peta 3D point cloud + database .db
+              -> visualisasi Foxglove 3D panel
+
+    Mode operasi:
+      - mapping       : bangun peta 3D baru dari nol
+      - localization  : load peta existing, robot tracking di peta tersebut
+
+    Diintegrasikan ke amr_full.launch.py via flag use_rtabmap:=true.
+  </description>
+
+  <maintainer email="muhammadalazharf@gmail.com">Muhammad Al Azhar Faradis</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- RTAB-Map dan dependencies -->
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>rtabmap_sync</exec_depend>
+  <exec_depend>rtabmap_util</exec_depend>
+  <exec_depend>rtabmap_viz</exec_depend>
+
+  <!-- ROS 2 core -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+
+  <!-- Sensor drivers (sudah ada di underlay & dari apt) -->
+  <exec_depend>realsense2_camera</exec_depend>
+  <exec_depend>rplidar_ros</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<!--
+  AMR - Reusable Macros
+  Author: Muhammad Al Azhar Faradis (NRP 2040241017)
+  ITS Surabaya - DTEO - Sarjana Terapan Teknologi Rekayasa Otomasi
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find amr_description)/urdf/amr_inertia.xacro"/>
+
+  <!-- ================================================================
+       Wheel macro
+       Cylinder rotated about Y axis (continuous joint).
+       For 4WD-Ackermann: 4 wheels, 1 motor PG45 drives all via shaft.
+       ================================================================ -->
+  <xacro:macro name="wheel" params="prefix parent xyz mass radius width">
+    <link name="${prefix}_wheel">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${width}"/></geometry>
+        <material name="black"><color rgba="0.05 0.05 0.05 1.0"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${radius}" length="${width}"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="${mass}"/>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <xacro:cylinder_inertia m="${mass}" r="${radius}" h="${width}"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="${parent}"/>
+      <child link="${prefix}_wheel"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.05" friction="0.01"/>
+    </joint>
+
+    <gazebo reference="${prefix}_wheel">
+      <mu1>1.2</mu1>
+      <mu2>1.0</mu2>
+      <kp>1e7</kp>
+      <kd>1.0</kd>
+      <minDepth>0.001</minDepth>
+      <maxVel>0.1</maxVel>
+      <material>Gazebo/FlatBlack</material>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- ================================================================
+       Steering link macro (Ackermann, front wheels only)
+       Revolute joint about Z axis, ±45 degrees.
+       ================================================================ -->
+  <xacro:macro name="steering_link" params="prefix parent xyz">
+    <link name="${prefix}_steering_link">
+      <visual>
+        <geometry><box size="0.02 0.02 0.05"/></geometry>
+        <material name="orange"><color rgba="1.0 0.5 0.0 1.0"/></material>
+      </visual>
+      <collision>
+        <geometry><box size="0.02 0.02 0.05"/></geometry>
+      </collision>
+      <inertial>
+        <mass value="0.05"/>
+        <xacro:box_inertia m="0.05" x="0.02" y="0.02" z="0.05"/>
+      </inertial>
+    </link>
+
+    <joint name="${prefix}_steering_joint" type="revolute">
+      <parent link="${parent}"/>
+      <child link="${prefix}_steering_link"/>
+      <origin xyz="${xyz}" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-0.785" upper="0.785" effort="5.0" velocity="3.0"/>
+      <dynamics damping="0.5" friction="0.05"/>
+    </joint>
+  </xacro:macro>
+
+</robot>

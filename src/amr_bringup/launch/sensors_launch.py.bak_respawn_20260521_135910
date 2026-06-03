@@ -1,0 +1,103 @@
+"""
+sensors_launch.py
+==================
+Launch all robot sensors:
+  1. RPLIDAR C1 (LiDAR 2D 360°)        -> /scan
+  2. Intel RealSense D455 (RGB-D)      -> /camera/camera/...
+
+NOTE: GPS U-Blox sudah DICOPOT secara fisik (platform indoor only).
+      Antena GNSS juga sudah tidak terpasang.
+
+Usage:
+  ros2 launch amr_bringup sensors_launch.py
+  ros2 launch amr_bringup sensors_launch.py use_lidar:=true use_camera:=false
+"""
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
+
+
+# ===== Serial port stable IDs =====
+# Update these jika hardware berubah:
+#   ls -l /dev/serial/by-id/
+RPLIDAR_PORT = (
+    '/dev/serial/by-id/'
+    'usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_'
+    '58cc4e9ee873ef11bbe1c68c8fcc3fa0-if00-port0'
+)
+
+
+def generate_launch_description():
+    use_lidar_arg = DeclareLaunchArgument(
+        'use_lidar', default_value='true',
+        description='Launch RPLIDAR C1 node')
+    use_camera_arg = DeclareLaunchArgument(
+        'use_camera', default_value='true',
+        description='Launch RealSense D455 node')
+
+    use_lidar = LaunchConfiguration('use_lidar')
+    use_camera = LaunchConfiguration('use_camera')
+
+    # ── 1. RPLIDAR C1 ──────────────────────────────
+    lidar_node = Node(
+        package='rplidar_ros',
+        executable='rplidar_node',
+        name='rplidar_node',
+        parameters=[{
+            'serial_port':      RPLIDAR_PORT,
+            'serial_baudrate':  460800,
+            'frame_id':         'laser_frame',
+            'angle_compensate': True,
+            'scan_mode':        'Standard',
+        }],
+        output='screen',
+        condition=IfCondition(use_lidar),
+    )
+
+    # ── 2. Intel RealSense D455 ────────────────────
+    realsense_node = Node(
+        package='realsense2_camera',
+        executable='realsense2_camera_node',
+        name='camera',
+        namespace='camera',
+        parameters=[{
+            'enable_color':            True,
+            'enable_depth':            True,
+            'enable_pointcloud':       False,
+            'align_depth.enable':      True,
+            'depth_module.profile':    '640x480x30',
+            'rgb_camera.profile':      '640x480x30',
+            'publish_tf':              False,  # URDF handles TF
+        }],
+        output='screen',
+        condition=IfCondition(use_camera),
+    )
+
+    # Static TF bridges: URDF frame names -> realsense frame names
+    static_tf_color = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_tf_color_bridge',
+        arguments=['0','0','0','0','0','0','color_optical_frame','camera_color_optical_frame'],
+        output='screen',
+        condition=IfCondition(use_camera),
+    )
+    static_tf_depth = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='static_tf_depth_bridge',
+        arguments=['0','0','0','0','0','0','depth_optical_frame','camera_depth_optical_frame'],
+        output='screen',
+        condition=IfCondition(use_camera),
+    )
+
+    return LaunchDescription([
+        use_lidar_arg,
+        use_camera_arg,
+        lidar_node,
+        realsense_node,
+        static_tf_color,
+        static_tf_depth,
+    ])

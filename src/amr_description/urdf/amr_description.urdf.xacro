@@ -1,0 +1,216 @@
+<?xml version="1.0"?>
+<!--
+  ====================================================
+  AMR - Mobile Robot Ackermann 4WD Indoor Platform
+  ====================================================
+  Konfigurasi:
+    - Drive   : 4WD via 1 motor PG45 + 2 differentials + shaft
+    - Steering: Servo Ackermann pada 2 roda depan
+    - Sensor  : RPLIDAR C1 + Intel RealSense D455
+    - TANPA IMU dan GPS (sesuai konfigurasi v1.0 indoor)
+  
+  TF Tree yang akan terbentuk:
+    base_footprint
+      └── base_link
+            ├── chassis
+            ├── rear_left_wheel
+            ├── rear_right_wheel
+            ├── front_left_steering_link  -> front_left_wheel
+            ├── front_right_steering_link -> front_right_wheel
+            ├── laser_frame      (RPLIDAR C1)
+            └── camera_link      (RealSense D455)
+                 ├── color_optical_frame
+                 └── depth_optical_frame
+  
+  Author: Muhammad Al Azhar Faradis (NRP 2040241017)
+  ITS Surabaya - DTEO
+  ====================================================
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="amr_4wd_ackermann">
+
+  <xacro:include filename="$(find amr_description)/urdf/amr_macros.xacro"/>
+
+  <!-- ================================================================
+       Geometric parameters (dapat di-override saat kalibrasi UMBmark)
+       ================================================================ -->
+  <xacro:property name="wheelbase"     value="0.500"/>   <!-- jarak as roda depan-belakang -->
+  <xacro:property name="track_width"   value="0.400"/>   <!-- jarak roda kiri-kanan -->
+  <xacro:property name="wheel_radius"  value="0.0775"/>  <!-- 155 mm / 2 (diameter ban+velg) -->
+  <xacro:property name="wheel_width"   value="0.060"/>   <!-- lebar ban -->
+
+  <xacro:property name="chassis_l"     value="0.600"/>
+  <xacro:property name="chassis_w"     value="0.350"/>
+  <xacro:property name="chassis_h"     value="0.150"/>
+  <xacro:property name="chassis_mass"  value="6.0"/>
+  <xacro:property name="wheel_mass"    value="0.30"/>
+
+  <!-- Sensor positions relatif terhadap base_link (pusat geometri robot, di tengah wheelbase, z=0 di lantai) -->
+  <xacro:property name="lidar_z"       value="0.250"/>   <!-- tinggi LiDAR dari lantai -->
+  <xacro:property name="camera_x"      value="0.350"/>   <!-- jarak kamera ke depan -->
+  <xacro:property name="camera_z"      value="0.200"/>   <!-- tinggi kamera dari lantai -->
+
+  <!-- ================================================================
+       ROOT LINKS: base_footprint dan base_link
+       ================================================================ -->
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <inertial>
+      <mass value="0.001"/>
+      <xacro:box_inertia m="0.001" x="0.01" y="0.01" z="0.01"/>
+    </inertial>
+  </link>
+
+  <!-- base_footprint -> base_link: angkat sebesar wheel_radius supaya base_link di sumbu roda -->
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================================================================
+       CHASSIS (body fisik robot)
+       ================================================================ -->
+  <link name="chassis">
+    <visual>
+      <origin xyz="0 0 ${chassis_h/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_l} ${chassis_w} ${chassis_h}"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.1 0.2 0.7 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_h/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_l} ${chassis_w} ${chassis_h}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${chassis_h/2}" rpy="0 0 0"/>
+      <mass value="${chassis_mass}"/>
+      <xacro:box_inertia m="${chassis_mass}"
+                         x="${chassis_l}"
+                         y="${chassis_w}"
+                         z="${chassis_h}"/>
+    </inertial>
+  </link>
+
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="chassis"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================================================================
+       REAR WHEELS (no steering, axis Y)
+       ================================================================ -->
+  <xacro:wheel prefix="rear_left"
+               parent="base_link"
+               xyz="${-wheelbase/2} ${ track_width/2} 0"
+               mass="${wheel_mass}"
+               radius="${wheel_radius}"
+               width="${wheel_width}"/>
+
+  <xacro:wheel prefix="rear_right"
+               parent="base_link"
+               xyz="${-wheelbase/2} ${-track_width/2} 0"
+               mass="${wheel_mass}"
+               radius="${wheel_radius}"
+               width="${wheel_width}"/>
+
+  <!-- ================================================================
+       FRONT STEERING LINKS + STEERED WHEELS
+       Hierarki: base_link -> steering_link -> wheel
+       Joint steering_joint = revolute Z (Ackermann)
+       Joint wheel_joint    = continuous Y (roda berputar)
+       ================================================================ -->
+  <xacro:steering_link prefix="front_left"
+                       parent="base_link"
+                       xyz="${ wheelbase/2} ${ track_width/2} 0"/>
+
+  <xacro:steering_link prefix="front_right"
+                       parent="base_link"
+                       xyz="${ wheelbase/2} ${-track_width/2} 0"/>
+
+  <!-- Front wheels mounted on steering links (origin di steering link = 0) -->
+  <xacro:wheel prefix="front_left"
+               parent="front_left_steering_link"
+               xyz="0 0 0"
+               mass="${wheel_mass}"
+               radius="${wheel_radius}"
+               width="${wheel_width}"/>
+
+  <xacro:wheel prefix="front_right"
+               parent="front_right_steering_link"
+               xyz="0 0 0"
+               mass="${wheel_mass}"
+               radius="${wheel_radius}"
+               width="${wheel_width}"/>
+
+  <!-- ================================================================
+       LIDAR: RPLIDAR C1
+       frame_id di driver: laser_frame
+       ================================================================ -->
+  <link name="laser_frame">
+    <visual>
+      <geometry>
+        <cylinder radius="0.04" length="0.05"/>
+      </geometry>
+      <material name="dark_gray">
+        <color rgba="0.2 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.17"/>
+      <xacro:cylinder_inertia m="0.17" r="0.04" h="0.05"/>
+    </inertial>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="laser_frame"/>
+    <origin xyz="0 0 ${lidar_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================================================================
+       CAMERA: Intel RealSense D455
+       ================================================================ -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.026 0.124 0.029"/>
+      </geometry>
+      <material name="silver">
+        <color rgba="0.7 0.7 0.7 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.072"/>
+      <xacro:box_inertia m="0.072" x="0.026" y="0.124" z="0.029"/>
+    </inertial>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child  link="camera_link"/>
+    <origin xyz="${camera_x} 0 ${camera_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Optical frames (sesuai konvensi REP-103: x kanan, y bawah, z depan) -->
+  <link name="color_optical_frame"/>
+  <joint name="color_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child  link="color_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <link name="depth_optical_frame"/>
+  <joint name="depth_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child  link="depth_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+</robot>

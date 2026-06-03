@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_slam</name>
+  <version>0.1.0</version>
+  <description>
+    Konfigurasi SLAM Toolbox + Nav2 untuk Mobile Robot Ackermann Indoor.
+    Berisi YAML config siap-pakai dengan parameter optimal untuk wheel-only odometry.
+  </description>
+  <maintainer email="muhammadalazharf@gmail.com">Muhammad Al Azhar Faradis</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,146 @@
+"""
+rtabmap_mapping.launch.py
+==========================
+Launch RTAB-Map dalam mode MAPPING dengan SYNC RGB-D + LiDAR.
+
+Asumsi prerequisite (sudah ter-launch dari amr_full.launch.py):
+  - realsense2_camera publishing /camera/color/image_raw, /camera/depth/image_rect_raw,
+    /camera/color/camera_info, /camera/depth/camera_info
+  - rplidar_ros publishing /scan
+  - odometry_publisher publishing /odom + TF odom -> base_link
+  - robot_state_publisher publishing TF base_link -> camera_link, base_link -> laser
+
+Output:
+  - /rtabmap/cloud_map        : peta 3D point cloud terakumulasi
+  - /rtabmap/cloud_obstacles  : obstacle layer
+  - /rtabmap/cloud_ground     : ground layer
+  - /rtabmap/grid_map         : occupancy grid 2D dari proyeksi 3D
+  - /rtabmap/mapData          : graph nodes & edges untuk debug
+  - TF map -> odom            : transform yang dikoreksi loop closure
+
+Usage:
+  ros2 launch amr_3d_mapping rtabmap_mapping.launch.py
+  ros2 launch amr_3d_mapping rtabmap_mapping.launch.py database_path:=~/maps/lab_3d.db
+"""
+import os
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node, PushRosNamespace
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description():
+
+    # ---- Launch arguments ----
+    use_sim_time_arg = DeclareLaunchArgument(
+        'use_sim_time', default_value='false',
+        description='Use simulation time (gazebo only)')
+
+    database_path_arg = DeclareLaunchArgument(
+        'database_path', default_value='~/.ros/rtabmap.db',
+        description='Path ke file .db RTAB-Map')
+
+    delete_db_on_start_arg = DeclareLaunchArgument(
+        'delete_db_on_start', default_value='false',
+        description='Hapus DB lama saat start (true) atau resume mapping (false)')
+
+    # ---- Topic remapping ----
+    # RealSense default: /camera/camera/color/image_raw (double namespace)
+    # tapi sering juga di-launch dengan single namespace /camera/color/image_raw
+    # kita pakai single namespace, sesuaikan jika perlu
+    rgb_topic_arg = DeclareLaunchArgument(
+        'rgb_topic', default_value='/camera/color/image_raw',
+        description='RGB image topic')
+
+    depth_topic_arg = DeclareLaunchArgument(
+        'depth_topic', default_value='/camera/depth/image_rect_raw',
+        description='Depth image topic (aligned ke RGB)')
+
+    camera_info_topic_arg = DeclareLaunchArgument(
+        'camera_info_topic', default_value='/camera/color/camera_info',
+        description='RGB camera info topic')
+
+    scan_topic_arg = DeclareLaunchArgument(
+        'scan_topic', default_value='/scan',
+        description='LiDAR scan topic')
+
+    odom_topic_arg = DeclareLaunchArgument(
+        'odom_topic', default_value='/odom',
+        description='Wheel odometry topic')
+
+    # ---- Config path ----
+    config_path = PathJoinSubstitution([
+        FindPackageShare('amr_3d_mapping'),
+        'config',
+        'rtabmap_mapping.yaml'
+    ])
+
+    # =================================================================
+    # NODE 1: RGB-D SYNC (rgbd_sync)
+    # Menggabungkan RGB + Depth + CameraInfo menjadi satu pesan rgbd_image
+    # dengan timestamp yang ter-align. Ini KUNCI mode SYNC.
+    # =================================================================
+    rgbd_sync_node = Node(
+        package='rtabmap_sync',
+        executable='rgbd_sync',
+        name='rgbd_sync',
+        output='screen',
+        parameters=[
+            config_path,
+            {'use_sim_time': LaunchConfiguration('use_sim_time')},
+        ],
+        remappings=[
+            ('rgb/image',       LaunchConfiguration('rgb_topic')),
+            ('depth/image',     LaunchConfiguration('depth_topic')),
+            ('rgb/camera_info', LaunchConfiguration('camera_info_topic')),
+            # output: /rgbd_image (default)
+        ],
+    )
+
+    # =================================================================
+    # NODE 2: RTAB-Map SLAM (rtabmap)
+    # Engine utama: bangun graph, deteksi loop closure, optimasi pose,
+    # generate peta 3D.
+    # =================================================================
+    rtabmap_slam_node = Node(
+        package='rtabmap_slam',
+        executable='rtabmap',
+        name='rtabmap',
+        output='screen',
+        parameters=[
+            config_path,
+            {
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+                'database_path': LaunchConfiguration('database_path'),
+                'subscribe_rgbd': True,
+                'subscribe_scan': True,
+                'approx_sync': True,
+                'queue_size': 30,
+            },
+        ],
+        remappings=[
+            ('rgbd_image', '/rgbd_image'),     # dari rgbd_sync
+            ('scan',       LaunchConfiguration('scan_topic')),
+            ('odom',       LaunchConfiguration('odom_topic')),
+        ],
+        arguments=[
+            # Hanya delete DB jika user request
+            '--ros-args',
+            '--log-level', 'INFO',
+            # delete_db argument disisipkan via launch action di bawah
+        ],
+    )
+
+    return LaunchDescription([
+        use_sim_time_arg,
+        database_path_arg,
+        delete_db_on_start_arg,
+        rgb_topic_arg,
+        depth_topic_arg,
+        camera_info_topic_arg,
+        scan_topic_arg,
+        odom_topic_arg,
+        rgbd_sync_node,
+        rtabmap_slam_node,
+    ])

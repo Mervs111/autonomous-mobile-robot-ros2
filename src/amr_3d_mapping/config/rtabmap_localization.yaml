@@ -1,0 +1,60 @@
+# =====================================================================
+# AMR Mobile Robot Ackermann - RTAB-Map LOCALIZATION mode
+# =====================================================================
+# Mode ini dipakai SAAT DEMO autonomous navigation dengan map existing.
+# Database .db yang dihasilkan dari mapping mode di-load read-only.
+# RTAB-Map akan track robot di peta tanpa menambahkan node baru.
+# =====================================================================
+
+rtabmap_slam:
+  ros__parameters:
+
+    frame_id: base_link
+    map_frame_id: map
+    odom_frame_id: odom
+
+    subscribe_depth: false
+    subscribe_rgbd:  true
+    subscribe_scan:  true
+    approx_sync: true
+    approx_sync_max_interval: 0.05
+    queue_size: 30
+    sync_queue_size: 30
+
+    tf_delay: 0.05
+    tf_tolerance: 0.1
+    publish_tf: true
+
+    database_path: ~/.ros/rtabmap.db
+    Mem/IncrementalMemory: "false"       # KEY DIFFERENCE: localization mode
+    Mem/InitWMWithAllNodes: "true"       # load semua node dari DB
+
+    Reg/Strategy: "1"
+    Reg/Force3DoF: "true"
+    Icp/PointToPlane: "true"
+    Icp/VoxelSize: "0.05"
+    Icp/MaxCorrespondenceDistance: "0.1"
+
+    Vis/FeatureType: "8"
+    Vis/MaxFeatures: "1000"
+    Vis/MinInliers: "15"
+
+    # Localization khusus: lebih banyak proximity check
+    RGBD/ProximityBySpace: "true"
+    RGBD/ProximityByTime: "false"
+    Rtabmap/LoopThr: "0.11"
+    Rtabmap/DetectionRate: "1.0"
+
+    publish_cloud_obstacles: true
+    publish_cloud_ground: true
+    publish_grid_map: true
+
+    Optimizer/GravitySigma: "0"
+
+
+rgbd_sync:
+  ros__parameters:
+    approx_sync: true
+    approx_sync_max_interval: 0.03
+    queue_size: 30
+    depth_scale: 1.0

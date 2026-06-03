@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>amr_controller</name>
+  <version>0.3.0</version>
+  <description>
+    AMR Controller package.
+    - stm32_bridge (C++)         : Joystick teleop -> STM32 USB serial; encoder feedback -> /encoder
+    - odometry_publisher (Python): Encoder -> /odom + TF, Ackermann math, auto-detect encoder mode
+    Steering: Ackermann front 2 wheels (mechanically synchronized via servo).
+    Drive   : 4WD via 1 motor PG45 + 2 differentials + shaft.
+  </description>
+  <maintainer email="muhammadalazharf@gmail.com">Muhammad Al Azhar Faradis</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

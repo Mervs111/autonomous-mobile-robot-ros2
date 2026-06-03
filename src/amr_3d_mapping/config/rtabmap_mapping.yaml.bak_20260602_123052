@@ -1,0 +1,145 @@
+# =====================================================================
+# AMR Mobile Robot Ackermann - RTAB-Map Config (VIO revision 26 Mei 2026)
+# =====================================================================
+# Perubahan dari versi sebelumnya:
+#   - Reg/Strategy: "1" → "2" (Vis+ICP, sebelumnya ICP only)
+#   - Optimizer/GravitySigma: "0" → "0.3" (aktifkan IMU gravity constraint)
+#   - Tambah section rgbd_odometry params (VIO settings)
+#   - Update comment: sekarang ADA IMU di sistem
+#
+# Mode SYNC = ApproximateTimeSynchronizer RGB + Depth + Scan + IMU.
+# VIO (rgbd_odometry) menggantikan wheel odometry sebagai sumber pose.
+# Reg/Strategy 2 = kombinasi visual features + ICP LiDAR:
+#   Visual → initial alignment estimate
+#   ICP LiDAR → fine constrain (menyelamatkan saat area textureless)
+# =====================================================================
+
+# =================================================================
+# RTAB-Map SLAM node params
+# =================================================================
+rtabmap_slam:
+  ros__parameters:
+
+    # ---- Frames ----
+    frame_id: base_link
+    map_frame_id: map
+    odom_frame_id: odom
+
+    # ---- Input subscriptions ----
+    subscribe_depth: false         # SYNC mode: pakai rgbd_image
+    subscribe_rgbd:  true
+    subscribe_scan:  true
+    subscribe_odom_info: false
+    approx_sync: true
+    approx_sync_max_interval: 0.05
+    queue_size: 30
+    sync_queue_size: 30
+
+    # ---- TF & timing ----
+    tf_delay: 0.05
+    tf_tolerance: 0.1
+    wait_for_transform: 0.2
+    publish_tf: true               # publish map → odom
+
+    # ---- Database management ----
+    database_path: ~/.ros/rtabmap.db
+    Mem/IncrementalMemory: "true"
+    Mem/InitWMWithAllNodes: "false"
+    Mem/SaveDepth16Format: "true"
+    Mem/RehearsalSimilarity: "0.45"
+    Mem/STMSize: "30"
+
+    # ---- Registration strategy ----
+    # Strategy 2 = Vis+ICP: visual features untuk initial estimate,
+    # ICP LiDAR untuk fine correction (paling robust indoor)
+    Reg/Strategy: "2"
+    Reg/Force3DoF: "true"          # 2D floor: x, y, yaw saja
+
+    # ICP params (LiDAR fine correction)
+    Icp/PointToPlane: "true"
+    Icp/Iterations: "15"           # moderate (from 10, not too high for CPU budget)
+    Icp/VoxelSize: "0.05"
+    Icp/MaxCorrespondenceDistance: "0.1"
+    Icp/Epsilon: "0.001"
+    Icp/MaxTranslation: "1.0"
+    Icp/MaxRotation: "0.78"
+
+    # ---- Visual features (loop closure + initial registration) ----
+    Vis/FeatureType: "8"            # GFTT/BRIEF (light)
+    Vis/MaxFeatures: "1000"
+    Vis/MinInliers: "15"
+
+    # ---- Local map / occupancy grid ----
+    Grid/FromDepth: "true"
+    Grid/RangeMax: "5.0"
+    Grid/CellSize: "0.05"           # resolusi 5cm, match Nav2
+    Grid/RayTracing: "true"
+    Grid/3D: "true"
+    Grid/NormalsSegmentation: "false"
+    Grid/MaxObstacleHeight: "1.5"
+    Grid/MaxGroundHeight: "0.05"
+    Grid/MinGroundHeight: "-0.05"
+
+    # ---- Loop closure ----
+    Rtabmap/LoopThr: "0.11"
+    Rtabmap/DetectionRate: "1.0"
+    Rtabmap/TimeThr: "700"
+    RGBD/NeighborLinkRefining: "true"
+    RGBD/ProximityBySpace: "true"
+    RGBD/AngularUpdate: "0.05"
+    RGBD/LinearUpdate: "0.05"
+    RGBD/OptimizeFromGraphEnd: "false"
+
+    # ---- IMU gravity constraint (aktif sekarang) ----
+    # GravitySigma: deviasi standar gravity vector (rad)
+    # 0.0 = disable, 0.3 = moderate constraint (recommended untuk indoor)
+    Optimizer/GravitySigma: "0.3"
+    Mem/UseOdomFeatures: "false"
+
+    # ---- Publishing ----
+    publish_cloud_map: false
+    publish_cloud_obstacles: true
+    publish_cloud_ground: true
+    publish_grid_map: true          # untuk Nav2 + Foxglove
+
+# =================================================================
+# rgbd_odometry node params (VIO: Visual-Inertial Odometry)
+# Node ini menggantikan wheel odometry
+# =================================================================
+rgbd_odometry:
+  ros__parameters:
+    frame_id: base_link
+    odom_frame_id: odom
+    publish_tf: true                # publish TF odom → base_link
+    subscribe_rgbd: true
+    subscribe_imu: true
+    approx_sync: true
+    queue_size: 30
+
+    # Odometry strategy: Frame-to-Map lebih robust (lebih banyak memory)
+    Odom/Strategy: "0"              # 0=Frame-to-Map, 1=Frame-to-Frame
+
+    # IMU bantu prediksi motion sebelum visual matching
+    Odom/GuessMotion: "true"
+
+    # Visual feature params untuk tracking antar frame
+    Vis/MaxFeatures: "600"
+    Vis/MinInliers: "10"
+    GFTT/MinDistance: "10"
+    GFTT/QualityLevel: "0.001"
+
+    # Local map size (lebih besar = lebih robust tapi lebih CPU)
+    OdomF2M/MaxSize: "1000"
+
+    # Force 3DoF (ground vehicle: no pitch, no roll)
+    Reg/Force3DoF: "true"
+
+# =================================================================
+# rgbd_sync node params
+# =================================================================
+rgbd_sync:
+  ros__parameters:
+    approx_sync: true
+    approx_sync_max_interval: 0.03  # 30ms toleransi depth-color sync
+    queue_size: 30
+    depth_scale: 1.0
