@@ -90,6 +90,13 @@ rtabmap_slam:
     RGBD/AngularUpdate: "0.05"
     RGBD/LinearUpdate: "0.05"
     RGBD/OptimizeFromGraphEnd: "false"
+    # Proximity-based loop closure tuning (FIX: prevent permanent drift)
+    # LocalRadius: radius pencarian node tetangga (meter) — robot bisa drift
+    # sampai 5m dan masih ketemu loop closure ke titik lama.
+    RGBD/LocalRadius: "5.0"
+    RGBD/ProximityMaxGraphDepth: "50"
+    RGBD/ProximityPathMaxNeighbors: "10"
+    RGBD/ProximityByTime: "false"
 
     # ---- IMU gravity constraint (aktif sekarang) ----
     # GravitySigma: deviasi standar gravity vector (rad)

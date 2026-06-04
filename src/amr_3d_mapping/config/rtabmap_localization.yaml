@@ -29,7 +29,9 @@ rtabmap_slam:
     Mem/IncrementalMemory: "false"       # KEY DIFFERENCE: localization mode
     Mem/InitWMWithAllNodes: "true"       # load semua node dari DB
 
-    Reg/Strategy: "1"
+    # FIX: konsisten dengan rtabmap_mapping.yaml (Vis+ICP, bukan ICP-only)
+    # ICP-only sulit relocalize karena tidak pakai visual features dari DB.
+    Reg/Strategy: "2"
     Reg/Force3DoF: "true"
     Icp/PointToPlane: "true"
     Icp/VoxelSize: "0.05"
@@ -37,11 +39,16 @@ rtabmap_slam:
 
     Vis/FeatureType: "8"
     Vis/MaxFeatures: "1000"
-    Vis/MinInliers: "15"
+    # FIX: turunkan dari 15 → 10 (konsisten dgn mapping), supaya tidak gagal
+    # relocalize di area textureless.
+    Vis/MinInliers: "10"
 
     # Localization khusus: lebih banyak proximity check
     RGBD/ProximityBySpace: "true"
     RGBD/ProximityByTime: "false"
+    RGBD/LocalRadius: "5.0"
+    RGBD/ProximityMaxGraphDepth: "50"
+    RGBD/ProximityPathMaxNeighbors: "10"
     Rtabmap/LoopThr: "0.11"
     Rtabmap/DetectionRate: "1.0"
 
@@ -49,12 +56,16 @@ rtabmap_slam:
     publish_cloud_ground: true
     publish_grid_map: true
 
-    Optimizer/GravitySigma: "0"
+    # FIX: aktifkan gravity constraint juga di localization
+    # (sebelumnya 0 — tidak konsisten dengan mapping)
+    Optimizer/GravitySigma: "0.3"
 
 
 rgbd_sync:
   ros__parameters:
-    approx_sync: true
+    # FIX: RealSense hardware-synced — approx_sync harus false
+    # (sebelumnya true, kontradiksi dgn ROS Wiki recommendation)
+    approx_sync: false
     approx_sync_max_interval: 0.03
     queue_size: 30
     depth_scale: 1.0
