@@ -16,8 +16,11 @@
 
 # =================================================================
 # RTAB-Map SLAM node params
+# FIX: section name harus = node name di launch ('rtabmap'),
+# bukan 'rtabmap_slam'. Kalau mismatch, ROS 2 SILENTLY IGNORE semua
+# params → SLAM berjalan dgn default → grid_map tidak publish.
 # =================================================================
-rtabmap_slam:
+rtabmap:
   ros__parameters:
 
     # ---- Frames ----

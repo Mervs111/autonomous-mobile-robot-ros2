@@ -6,7 +6,8 @@
 # RTAB-Map akan track robot di peta tanpa menambahkan node baru.
 # =====================================================================
 
-rtabmap_slam:
+# FIX: section name harus match node name 'rtabmap' di launch file
+rtabmap:
   ros__parameters:
 
     frame_id: base_link
