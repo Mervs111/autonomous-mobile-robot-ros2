@@ -1,5 +1,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "std_msgs/msg/int32.hpp"
 #include <fcntl.h>
 #include <termios.h>
@@ -8,6 +9,8 @@
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <chrono>
+#include <atomic>
 
 // ============================================================
 //  AMR - STM32 Bridge Node
@@ -34,6 +37,8 @@
 #define DEADMAN_BTN  5                // R1 button on PS4/PS5 DualShock Bluetooth joystick
 #define AXIS_VEL     1                // Left analog stick (up/down) -> velocity
 #define AXIS_STEER   3                // Right analog stick (left/right) -> steering
+// Deadman timeout: if no /cmd_vel received within this duration, send stop
+#define CMDVEL_TIMEOUT_MS  500
 // NOTE: Joystick is PS4/PS5 DualShock via Bluetooth (MAC 8C:41:F2:D6:9D:7F).
 // Verified Day 2: detected as "Wireless Controller" by Linux kernel.
 // Button/axis mapping is compatible with PS4 BT default layout.
@@ -60,8 +65,20 @@ public:
       "/joy", 10,
       std::bind(&STM32Bridge::joy_callback, this, std::placeholders::_1));
 
+    // Subscribe to /cmd_vel for Nav2 autonomous commands
+    cmdvel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      "/cmd_vel", 10,
+      std::bind(&STM32Bridge::cmdvel_callback, this, std::placeholders::_1));
+
     // Publisher: encoder feedback -> /encoder topic
     encoder_pub_ = this->create_publisher<std_msgs::msg::Int32>("/encoder", 10);
+
+    // Deadman watchdog: fires every 100ms, sends stop if /cmd_vel is stale
+    last_cmdvel_time_ = this->now();
+    cmdvel_active_ = false;
+    watchdog_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(100),
+      std::bind(&STM32Bridge::watchdog_callback, this));
 
     // Start encoder reader thread (runs in parallel)
     if (serial_fd_ >= 0) {
@@ -74,6 +91,8 @@ public:
       "[INFO] Steering mode: Ackermann 2WS - front 2 wheels only");
     RCLCPP_INFO(this->get_logger(),
       "[INFO] Encoder feedback publishing to /encoder");
+    RCLCPP_INFO(this->get_logger(),
+      "[INFO] Deadman watchdog active: stop if /cmd_vel silent >%dms", CMDVEL_TIMEOUT_MS);
   }
 
   ~STM32Bridge()
@@ -94,10 +113,14 @@ public:
 
 private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdvel_sub_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr encoder_pub_;
+  rclcpp::TimerBase::SharedPtr watchdog_timer_;
   std::thread read_thread_;
   int serial_fd_;
   bool running_;
+  rclcpp::Time last_cmdvel_time_;
+  std::atomic<bool> cmdvel_active_;
 
   // --------------------------------------------------
   // Joystick callback: reads /joy and sends to STM32
@@ -134,6 +157,53 @@ private:
     steering = std::max(-MAX_STEER, std::min(MAX_STEER, steering));
 
     send_command(velocity, steering);
+  }
+
+  // --------------------------------------------------
+  // /cmd_vel callback: Nav2 autonomous commands
+  // Converts Twist (m/s, rad/s) → PWM + steering angle
+  // --------------------------------------------------
+  void cmdvel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    if (serial_fd_ < 0) return;
+
+    last_cmdvel_time_ = this->now();
+    cmdvel_active_ = true;
+
+    // linear.x [-0.3..0.3 m/s] → PWM [-4000..4000]
+    // angular.z [-0.5..0.5 rad/s] → steering angle [-45..45 deg]
+    // Wheel base = 0.50m: steer = atan(L * omega / v) in degrees
+    float vx = msg->linear.x;
+    float wz = msg->angular.z;
+
+    int velocity = static_cast<int>(vx * (MAX_PWM / 0.3f));
+    velocity = std::max(-MAX_PWM, std::min(MAX_PWM, velocity));
+
+    // Derive steering from angular velocity. At low speed use direct mapping.
+    float steer_rad = (std::abs(vx) > 0.01f)
+                      ? std::atan2(0.50f * wz, std::abs(vx))
+                      : (wz * 1.0f);  // low-speed approximation
+    int steering = static_cast<int>(steer_rad * (180.0f / M_PI)) + STEER_TRIM;
+    steering = std::max(-MAX_STEER, std::min(MAX_STEER, steering));
+
+    send_command(velocity, steering);
+  }
+
+  // --------------------------------------------------
+  // Watchdog: fires every 100ms
+  // If /cmd_vel has not arrived in CMDVEL_TIMEOUT_MS → stop
+  // --------------------------------------------------
+  void watchdog_callback()
+  {
+    if (!cmdvel_active_) return;
+
+    auto elapsed_ms = (this->now() - last_cmdvel_time_).nanoseconds() / 1e6;
+    if (elapsed_ms > CMDVEL_TIMEOUT_MS) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+        "[WATCHDOG] /cmd_vel timeout (%.0f ms) — sending STOP to STM32", elapsed_ms);
+      send_command(0, 0);
+      cmdvel_active_ = false;
+    }
   }
 
   // --------------------------------------------------

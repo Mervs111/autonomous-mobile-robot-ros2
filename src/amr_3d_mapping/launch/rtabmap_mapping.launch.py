@@ -261,6 +261,32 @@ def generate_launch_description():
         arguments=['--ros-args', '--log-level', 'INFO'],
     )
 
+    # =================================================================
+    # NODE 5: depthimage_to_laserscan
+    # Konversi depth image D455 → virtual LaserScan untuk Nav2 costmap.
+    # Mendeteksi obstacle yang tidak terlihat LiDAR (terlalu rendah/tinggi).
+    # Output: /depth_scan (LaserScan) → dikonsumsi Nav2 local + global costmap.
+    # =================================================================
+    depth_to_scan_node = Node(
+        package='depthimage_to_laserscan',
+        executable='depthimage_to_laserscan_node',
+        name='depth_to_laserscan',
+        output='screen',
+        parameters=[{
+            'use_sim_time': LaunchConfiguration('use_sim_time'),
+            'scan_height': 10,           # jumlah baris pixel yang di-sample
+            'scan_time': 0.033,          # 30Hz sesuai RealSense
+            'range_min': 0.2,            # jarak minimum valid (meter)
+            'range_max': 5.0,            # jarak maximum valid (meter)
+            'output_frame': 'camera_color_optical_frame',
+        }],
+        remappings=[
+            ('image',       LaunchConfiguration('depth_topic')),
+            ('camera_info', LaunchConfiguration('camera_info_topic')),
+            ('scan',        '/depth_scan'),  # output terpisah dari /scan LiDAR
+        ],
+    )
+
     return LaunchDescription([
         use_sim_time_arg,
         database_path_arg,
@@ -272,4 +298,5 @@ def generate_launch_description():
         rgbd_sync_node,        # 2. Sync RGB-D
         rgbd_odometry_node,    # 3. VIO odometry
         rtabmap_slam_node,     # 4. SLAM engine
+        depth_to_scan_node,    # 5. Depth → virtual scan untuk Nav2 costmap
     ])
