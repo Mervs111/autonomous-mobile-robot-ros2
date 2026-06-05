@@ -147,10 +147,15 @@ rgbd_odometry:
     # MaxFeatures naik 600→800, MinInliers turun 5→3 (toleran area gelap),
     # MinDistance turun 10→7 (pixel jarak antar fitur, lebih rapat = lebih
     # banyak fitur kecil ter-detect saat area textureless).
-    Vis/MaxFeatures: "800"
-    Vis/MinInliers: "3"
-    GFTT/MinDistance: "7"
+    Vis/MaxFeatures: "1000"           # naik 800→1000: lebih banyak fitur di-track
+    Vis/MinInliers: "2"               # turun 3→2: lebih toleran area textureless
+    GFTT/MinDistance: "5"             # turun 7→5: fitur lebih rapat = lebih banyak
     GFTT/QualityLevel: "0.001"
+
+    # Auto-recovery saat odometry lost (background merah)
+    # ResetCountdown=1: setelah 1 frame lost, langsung reset & coba tracking ulang
+    # tanpa perlu user manual reset via rtabmap_viz menu
+    Odom/ResetCountdown: "1"
 
     # Local map size (lebih besar = lebih robust tapi lebih CPU)
     OdomF2M/MaxSize: "1000"

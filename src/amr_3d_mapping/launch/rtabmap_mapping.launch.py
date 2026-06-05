@@ -232,7 +232,7 @@ def generate_launch_description():
                 'Grid/MaxGroundHeight': '0.05',
                 'Grid/MinGroundHeight': '-0.05',
                 # ---- Loop closure ----
-                'Rtabmap/LoopThr': '0.11',
+                'Rtabmap/LoopThr': '0.15',        # naik 0.11→0.15: lebih mudah accept meski ada drift
                 'Rtabmap/DetectionRate': '1.0',
                 'Rtabmap/TimeThr': '700',
                 'RGBD/NeighborLinkRefining': 'true',
