@@ -34,10 +34,10 @@
 #define MAX_PWM      4000             // Max PWM value for traction motors
 #define MAX_STEER    45
 #define STEER_TRIM   -5               // Max steering angle in degrees
-#define DEADMAN_BTN  5                // R1 button on PS4/PS5 DualShock Bluetooth joystick
+#define DEADMAN_BTN  4                // R1 on Rexus GX-300 (verified: buttons[4])
 #define AXIS_VEL     1                // Left analog stick (up/down) -> velocity
 #define AXIS_STEER   3                // Right analog stick (left/right) -> steering
-#define SLOW_BTN     3                // Triangle (Rexus GX-300 PS4 layout) → toggle mapping speed
+#define SLOW_BTN     1                // Triangle on Rexus GX-300 (verified: buttons[1])
 #define SLOW_PERCENT 10               // 10% dari MAX_PWM saat mapping mode aktif
 // Deadman timeout: if no /cmd_vel received within this duration, send stop
 #define CMDVEL_TIMEOUT_MS  500
