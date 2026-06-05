@@ -37,6 +37,8 @@
 #define DEADMAN_BTN  5                // R1 button on PS4/PS5 DualShock Bluetooth joystick
 #define AXIS_VEL     1                // Left analog stick (up/down) -> velocity
 #define AXIS_STEER   3                // Right analog stick (left/right) -> steering
+#define SLOW_BTN     3                // Triangle (Rexus GX-300 PS4 layout) → toggle mapping speed
+#define SLOW_PERCENT 10               // 10% dari MAX_PWM saat mapping mode aktif
 // Deadman timeout: if no /cmd_vel received within this duration, send stop
 #define CMDVEL_TIMEOUT_MS  500
 // NOTE: Joystick is PS4/PS5 DualShock via Bluetooth (MAC 8C:41:F2:D6:9D:7F).
@@ -46,7 +48,8 @@
 class STM32Bridge : public rclcpp::Node
 {
 public:
-  STM32Bridge() : Node("stm32_bridge"), serial_fd_(-1), running_(true)
+  STM32Bridge() : Node("stm32_bridge"), serial_fd_(-1), running_(true),
+                  slow_mode_(false), slow_btn_prev_(false)
   {
     // Open serial port to STM32
     serial_fd_ = open(SERIAL_PORT, O_RDWR | O_NOCTTY | O_SYNC);
@@ -93,6 +96,8 @@ public:
       "[INFO] Encoder feedback publishing to /encoder");
     RCLCPP_INFO(this->get_logger(),
       "[INFO] Deadman watchdog active: stop if /cmd_vel silent >%dms", CMDVEL_TIMEOUT_MS);
+    RCLCPP_INFO(this->get_logger(),
+      "[INFO] Triangle = toggle MAPPING SPEED (%d%% PWM, less motor noise)", SLOW_PERCENT);
   }
 
   ~STM32Bridge()
@@ -121,6 +126,8 @@ private:
   bool running_;
   rclcpp::Time last_cmdvel_time_;
   std::atomic<bool> cmdvel_active_;
+  bool slow_mode_;       // mapping speed mode (triangle toggle)
+  bool slow_btn_prev_;   // edge detection for triangle button
 
   // --------------------------------------------------
   // Joystick callback: reads /joy and sends to STM32
@@ -132,6 +139,17 @@ private:
         "[WARN] Serial port not open! Connect STM32 USB cable.");
       return;
     }
+
+    // Triangle toggle: mapping speed mode (10% PWM)
+    bool slow_btn_now = (msg->buttons.size() > SLOW_BTN &&
+                         msg->buttons[SLOW_BTN] == 1);
+    if (slow_btn_now && !slow_btn_prev_) {
+      slow_mode_ = !slow_mode_;
+      RCLCPP_INFO(this->get_logger(),
+        "[SPEED] Mapping mode %s (%d%% PWM)",
+        slow_mode_ ? "ON" : "OFF", slow_mode_ ? SLOW_PERCENT : 100);
+    }
+    slow_btn_prev_ = slow_btn_now;
 
     // Deadman switch: R1 must be held for robot to move (safety)
     bool deadman = (msg->buttons.size() > DEADMAN_BTN &&
@@ -146,14 +164,17 @@ private:
     float steer_raw = (msg->axes.size() > AXIS_STEER)
                       ? msg->axes[AXIS_STEER] : 0.0f;
 
+    // Apply speed limit: slow_mode caps PWM to SLOW_PERCENT%
+    int max_pwm = slow_mode_ ? (MAX_PWM * SLOW_PERCENT / 100) : MAX_PWM;
+
     // Negate velocity: analog up (+1.0) = forward on hardware
-    int velocity = static_cast<int>(vel_raw   * -MAX_PWM);
+    int velocity = static_cast<int>(vel_raw * -max_pwm);
 
     // Negate steering: analog right (+1.0) = turn right on hardware
     int steering = static_cast<int>(steer_raw * -MAX_STEER) + STEER_TRIM;
 
     // Clamp values to valid range
-    velocity = std::max(-MAX_PWM,  std::min(MAX_PWM,  velocity));
+    velocity = std::max(-max_pwm,  std::min(max_pwm,  velocity));
     steering = std::max(-MAX_STEER, std::min(MAX_STEER, steering));
 
     send_command(velocity, steering);
