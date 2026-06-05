@@ -78,6 +78,7 @@ public:
 
     // Deadman watchdog: fires every 100ms, sends stop if /cmd_vel is stale
     last_cmdvel_time_ = this->now();
+    last_joy_time_ = this->now();
     cmdvel_active_ = false;
     watchdog_timer_ = this->create_wall_timer(
       std::chrono::milliseconds(100),
@@ -125,6 +126,7 @@ private:
   int serial_fd_;
   bool running_;
   rclcpp::Time last_cmdvel_time_;
+  rclcpp::Time last_joy_time_;
   std::atomic<bool> cmdvel_active_;
   bool slow_mode_;       // mapping speed mode (triangle toggle)
   bool slow_btn_prev_;   // edge detection for triangle button
@@ -139,6 +141,9 @@ private:
         "[WARN] Serial port not open! Connect STM32 USB cable.");
       return;
     }
+
+    // Catat waktu terakhir joystick aktif — dipakai watchdog agar tidak override
+    last_joy_time_ = this->now();
 
     // Triangle toggle: mapping speed mode (10% PWM)
     bool slow_btn_now = (msg->buttons.size() > SLOW_BTN &&
@@ -217,6 +222,10 @@ private:
   void watchdog_callback()
   {
     if (!cmdvel_active_) return;
+
+    // Joystick aktif dalam 1 detik terakhir → jangan override dengan stop
+    auto joy_elapsed_ms = (this->now() - last_joy_time_).nanoseconds() / 1e6;
+    if (joy_elapsed_ms < 1000.0) return;
 
     auto elapsed_ms = (this->now() - last_cmdvel_time_).nanoseconds() / 1e6;
     if (elapsed_ms > CMDVEL_TIMEOUT_MS) {
