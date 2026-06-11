@@ -1,11 +1,13 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joy.hpp"
 #include "std_msgs/msg/int32.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 #include <cstring>
 #include <cstdio>
+#include <cmath>
 #include <string>
 #include <thread>
 
@@ -34,6 +36,7 @@
 #define DEADMAN_BTN  5                // R1 button on PS4/PS5 DualShock Bluetooth joystick
 #define AXIS_VEL     1                // Left analog stick (up/down) -> velocity
 #define AXIS_STEER   3                // Right analog stick (left/right) -> steering
+#define WHEELBASE    0.5f             // m, jarak sumbu roda (Ackermann)
 // NOTE: Joystick is PS4/PS5 DualShock via Bluetooth (MAC 8C:41:F2:D6:9D:7F).
 // Verified Day 2: detected as "Wireless Controller" by Linux kernel.
 // Button/axis mapping is compatible with PS4 BT default layout.
@@ -55,10 +58,32 @@ public:
       RCLCPP_INFO(this->get_logger(), "[OK] STM32 connected!");
     }
 
+    // ---- Autonomous mode (cmd_vel) parameters ----
+    // autonomous_enabled : false = perilaku lama (joystick-only).
+    //   Aktifkan runtime: ros2 param set /stm32_bridge autonomous_enabled true
+    // max_speed_mps      : kecepatan (m/s) yang dipetakan ke MAX_PWM.
+    //   KALIBRASI di lapangan! cmd_vel 0.3 m/s -> PWM = 0.3/max_speed*4000.
+    // cmd_vel_timeout_ms : watchdog — tanpa cmd_vel baru selama ini, STOP.
+    this->declare_parameter("autonomous_enabled", false);
+    this->declare_parameter("max_speed_mps", 1.0);
+    this->declare_parameter("cmd_vel_timeout_ms", 500);
+
     // Subscribe to joystick topic
     joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10,
       std::bind(&STM32Bridge::joy_callback, this, std::placeholders::_1));
+
+    // Subscribe to cmd_vel (Nav2 / autonomous) — aktif hanya jika
+    // autonomous_enabled=true DAN R1 tidak ditekan (R1 = manual override)
+    cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      "/cmd_vel", 10,
+      std::bind(&STM32Bridge::cmd_vel_callback, this, std::placeholders::_1));
+
+    // Watchdog 100ms: stop motor jika cmd_vel berhenti datang (autonomous)
+    watchdog_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(100),
+      std::bind(&STM32Bridge::watchdog_check, this));
+    last_cmd_vel_time_ = this->now();
 
     // Publisher: encoder feedback -> /encoder topic
     encoder_pub_ = this->create_publisher<std_msgs::msg::Int32>("/encoder", 10);
@@ -94,10 +119,15 @@ public:
 
 private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+  rclcpp::TimerBase::SharedPtr watchdog_timer_;
   rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr encoder_pub_;
+  rclcpp::Time last_cmd_vel_time_;
   std::thread read_thread_;
   int serial_fd_;
   bool running_;
+  bool manual_override_ = false;   // true saat R1 ditekan (joystick pegang kendali)
+  bool autonomous_active_ = false; // true saat cmd_vel sedang menggerakkan robot
 
   // --------------------------------------------------
   // Joystick callback: reads /joy and sends to STM32
@@ -113,8 +143,13 @@ private:
     // Deadman switch: R1 must be held for robot to move (safety)
     bool deadman = (msg->buttons.size() > DEADMAN_BTN &&
                     msg->buttons[DEADMAN_BTN] == 1);
+    manual_override_ = deadman;
     if (!deadman) {
-      send_command(0, 0);
+      // R1 lepas: kalau autonomous sedang aktif, JANGAN kirim stop di sini —
+      // biarkan cmd_vel yang pegang kendali (watchdog tetap menjaga).
+      if (!autonomous_active_) {
+        send_command(0, 0);
+      }
       return;
     }
 
@@ -134,6 +169,67 @@ private:
     steering = std::max(-MAX_STEER, std::min(MAX_STEER, steering));
 
     send_command(velocity, steering);
+  }
+
+  // --------------------------------------------------
+  // cmd_vel callback: jalur AUTONOMOUS (Nav2 / patrol)
+  // Konversi Twist -> (PWM, steering deg) kinematika Ackermann:
+  //   steer = atan(WHEELBASE * angular.z / linear.x)
+  // Aktif hanya jika autonomous_enabled=true dan R1 TIDAK ditekan.
+  // --------------------------------------------------
+  void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg)
+  {
+    if (serial_fd_ < 0) return;
+
+    bool enabled = this->get_parameter("autonomous_enabled").as_bool();
+    if (!enabled || manual_override_) {
+      autonomous_active_ = false;
+      return;  // joystick (R1) selalu menang
+    }
+
+    last_cmd_vel_time_ = this->now();
+
+    double v = msg->linear.x;    // m/s
+    double w = msg->angular.z;   // rad/s
+    double max_speed = this->get_parameter("max_speed_mps").as_double();
+    if (max_speed < 0.1) max_speed = 0.1;
+
+    int velocity = static_cast<int>((v / max_speed) * MAX_PWM);
+
+    // Ackermann: butuh kecepatan maju untuk belok (tidak bisa putar di tempat)
+    int steering = STEER_TRIM;
+    if (std::fabs(v) > 0.05) {
+      double steer_rad = std::atan(WHEELBASE * w / v);
+      // Konvensi REP-103: +angular.z = belok kiri. Di hardware ini nilai
+      // steering POSITIF = kiri (lihat negasi joystick di joy_callback).
+      // VERIFIKASI sekali di bench: roda harus belok kiri saat angular.z > 0.
+      steering = static_cast<int>(steer_rad * 180.0 / M_PI) + STEER_TRIM;
+    }
+
+    velocity = std::max(-MAX_PWM,   std::min(MAX_PWM,   velocity));
+    steering = std::max(-MAX_STEER, std::min(MAX_STEER, steering));
+
+    autonomous_active_ = (velocity != 0);
+    send_command(velocity, steering);
+  }
+
+  // --------------------------------------------------
+  // Watchdog: kalau autonomous aktif tapi cmd_vel berhenti
+  // datang > timeout, STOP motor (cegah robot kabur saat
+  // Nav2/ROS mati mendadak)
+  // --------------------------------------------------
+  void watchdog_check()
+  {
+    if (!autonomous_active_ || manual_override_) return;
+    int timeout_ms = this->get_parameter("cmd_vel_timeout_ms").as_int();
+    auto elapsed_ms =
+      (this->now() - last_cmd_vel_time_).nanoseconds() / 1000000;
+    if (elapsed_ms > timeout_ms) {
+      autonomous_active_ = false;
+      send_command(0, 0);
+      RCLCPP_WARN(this->get_logger(),
+        "[WATCHDOG] cmd_vel timeout (%ld ms) — motor STOP.", elapsed_ms);
+    }
   }
 
   // --------------------------------------------------
