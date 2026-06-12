@@ -12,6 +12,7 @@ install(DIRECTORY config launch maps
 install(PROGRAMS
   scripts/goal_sender.py
   scripts/amr_auto_patrol.py
+  scripts/amr_loop_patrol.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

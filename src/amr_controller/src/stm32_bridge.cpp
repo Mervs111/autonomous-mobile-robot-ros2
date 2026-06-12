@@ -67,6 +67,9 @@ public:
     this->declare_parameter("autonomous_enabled", false);
     this->declare_parameter("max_speed_mps", 1.0);
     this->declare_parameter("cmd_vel_timeout_ms", 500);
+    // forward_only=true: PWM negatif (mundur) di-clamp ke 0. Firmware STM32
+    // belum dukung PWM negatif, jadi ini WAJIB true sampai firmware di-fix.
+    this->declare_parameter("forward_only", true);
 
     // Subscribe to joystick topic
     joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
@@ -195,6 +198,12 @@ private:
     if (max_speed < 0.1) max_speed = 0.1;
 
     int velocity = static_cast<int>((v / max_speed) * MAX_PWM);
+
+    // FORWARD-ONLY safety: firmware belum support PWM negatif. Perintah mundur
+    // dari Nav2 (mis. recovery BackUp) di-clamp jadi STOP, bukan kirim negatif.
+    if (this->get_parameter("forward_only").as_bool() && velocity < 0) {
+      velocity = 0;
+    }
 
     // Ackermann: butuh kecepatan maju untuk belok (tidak bisa putar di tempat)
     int steering = STEER_TRIM;
