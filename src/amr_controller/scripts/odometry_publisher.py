@@ -44,7 +44,7 @@ from rclpy.duration import Duration
 from std_msgs.msg import Int32
 from sensor_msgs.msg import Joy
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Quaternion, TransformStamped
+from geometry_msgs.msg import Quaternion, TransformStamped, Twist
 from tf2_ros import TransformBroadcaster
 
 
@@ -75,6 +75,10 @@ class OdometryPublisher(Node):
         self.declare_parameter('base_frame', 'base_footprint')
         self.declare_parameter('publish_tf', False)
         self.declare_parameter('encoder_format', 'auto')       # 'auto', 'delta', 'cumulative'
+        # KALIBRASI jarak: odom ternyata ~2x lebih besar dari fisik (F:1.0 -> ~50cm).
+        # dist_scale=0.5 mengoreksi. TUNABLE LIVE (tanpa rebuild):
+        #   ros2 param set /odometry_publisher dist_scale 0.5
+        self.declare_parameter('dist_scale', 0.5)
 
         gp = self.get_parameter
         self.wheel_radius = gp('wheel_radius').value
@@ -96,6 +100,8 @@ class OdometryPublisher(Node):
         self.y = 0.0
         self.theta = 0.0
         self.steering = 0.0  # current steering command (rad)
+        # waktu cmd_vel terakhir (init di masa lalu agar joystick aktif saat awal)
+        self.last_cmd_vel_t = self.get_clock().now() - Duration(seconds=10)
 
         # Encoder state
         self.last_encoder = None      # last raw value
@@ -111,6 +117,11 @@ class OdometryPublisher(Node):
             Int32, '/encoder', self.encoder_cb, qos)
         self.sub_joy = self.create_subscription(
             Joy, '/joy', self.joy_cb, qos)
+        # FIX: baca setir juga dari /cmd_vel (mode autonomous). Tanpa ini, yaw
+        # odom TIDAK PERNAH berubah saat robot jalan via cmd_vel (joystick netral)
+        # -> patrol mentok "belok 0/90". Lihat cmd_vel_cb.
+        self.sub_cmd = self.create_subscription(
+            Twist, '/cmd_vel', self.cmd_vel_cb, 10)
 
         self.pub_odom = self.create_publisher(Odometry, '/odom', qos)
 
@@ -134,11 +145,28 @@ class OdometryPublisher(Node):
     # Callbacks
     # =====================================================
     def joy_cb(self, msg: Joy):
-        """Read steering axis from joystick."""
+        """Setir dari joystick — HANYA saat tidak ada cmd_vel autonomous aktif."""
+        # Kalau cmd_vel baru diterima (<0.5s) = mode autonomous -> jangan timpa
+        # dengan joystick netral (yang bikin steering balik ke 0).
+        dt_cmd = (self.get_clock().now() - self.last_cmd_vel_t).nanoseconds / 1e9
+        if dt_cmd < 0.5:
+            return
         if len(msg.axes) > self.joy_steer_axis:
             steer_raw = msg.axes[self.joy_steer_axis]  # -1.0 to 1.0
             # Match stm32_bridge convention (negate for hardware right turn)
             self.steering = -steer_raw * self.max_steer
+
+    def cmd_vel_cb(self, msg: Twist):
+        """Mode autonomous: turunkan sudut setir dari /cmd_vel (Ackermann inverse).
+        steer = atan(wheelbase * angular.z / linear.x). Ini yang bikin yaw odom
+        berubah saat robot belok otonom (sebelumnya selalu 0)."""
+        v = msg.linear.x
+        w = msg.angular.z
+        if abs(v) > 0.03:
+            self.steering = math.atan(self.wheelbase * w / v)
+        else:
+            self.steering = 0.0
+        self.last_cmd_vel_t = self.get_clock().now()
 
     def encoder_cb(self, msg: Int32):
         """Process encoder reading; auto-detect cumulative vs delta."""
@@ -189,8 +217,8 @@ class OdometryPublisher(Node):
         if dt <= 0.0:
             return
 
-        # Distance traveled this tick
-        delta_dist = self.last_delta * self.dist_per_tick
+        # Distance traveled this tick (× dist_scale untuk kalibrasi 2x)
+        delta_dist = self.last_delta * self.dist_per_tick * self.get_parameter('dist_scale').value
         # Reset delta after consuming (only relevant for 'delta' format)
         # For 'cumulative', last_delta naturally reflects new readings
         if self.detected_format == 'delta':
