@@ -84,6 +84,8 @@ class LoopPatrol(Node):
         self.seg_start_x = self.seg_start_y = 0.0
         self.seg_yaw_accum = 0.0
         self.prev_yaw = 0.0
+        self.prev_x = self.prev_y = 0.0
+        self.seg_path_len = 0.0          # panjang lintasan ditempuh dlm segmen (m)
         self.t_seg_start = self.get_clock().now()
 
         self.get_logger().info(
@@ -138,8 +140,10 @@ class LoopPatrol(Node):
 
         if not self.seg_started:
             self.seg_start_x, self.seg_start_y = self.x, self.y
+            self.prev_x, self.prev_y = self.x, self.y
             self.prev_yaw = self.yaw
             self.seg_yaw_accum = 0.0
+            self.seg_path_len = 0.0
             self.t_seg_start = self.get_clock().now()
             self.seg_started = True
             self.get_logger().info(
@@ -164,12 +168,18 @@ class LoopPatrol(Node):
                 return
             cmd.linear.x = self.fwd_speed
         else:  # 'T' belok arc Ackermann
-            self.seg_yaw_accum += ang_diff(self.yaw, self.prev_yaw)
-            self.prev_yaw = self.yaw
-            deg = math.degrees(self.seg_yaw_accum)
-            self.get_logger().info(f'  belok {deg:.0f}/{target:.0f} deg',
-                                   throttle_duration_sec=1.0)
-            if abs(deg) >= abs(target):
+            # CATATAN: /odom yaw TIDAK update saat autonomous (odometry_publisher
+            # baca setir dari /joy, bukan /cmd_vel). Jadi deteksi belok pakai
+            # PANJANG LINTASAN (arc length) yang TETAP kebaca dari encoder:
+            #   arc = radius * sudut(rad).  Untuk 90 deg @ R=0.9m -> 1.41 m.
+            self.seg_path_len += math.hypot(self.x - self.prev_x,
+                                            self.y - self.prev_y)
+            self.prev_x, self.prev_y = self.x, self.y
+            arc_target = self.min_radius * math.radians(abs(target))
+            self.get_logger().info(
+                f'  belok arc {self.seg_path_len:.2f}/{arc_target:.2f} m '
+                f'(~{target:.0f} deg)', throttle_duration_sec=1.0)
+            if self.seg_path_len >= arc_target:
                 self._stop()
                 self._next_segment()
                 return
