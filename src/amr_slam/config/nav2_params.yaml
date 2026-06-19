@@ -22,7 +22,9 @@ bt_navigator:
     odom_topic: /odom
     bt_loop_duration: 10
     default_server_timeout: 20
-    default_nav_to_pose_bt_xml: "navigate_to_pose_w_replanning_and_recovery.xml"
+    # CATATAN: default_nav_to_pose_bt_xml DIHAPUS — sebelumnya isinya cuma nama
+    # file (bukan path absolut) -> "Couldn't open input XML file". Tanpa baris ini
+    # Nav2 pakai path default bawaan yang lengkap di /opt/ros/.../behavior_trees/.
     # CATATAN: plugin_lib_names sengaja TIDAK didefinisikan. Nav2 Humble akan
     # auto-load semua BT node plugin via pluginlib. Mendefinisikan list eksplisit
     # di NUC ini justru memicu double-registration crash
