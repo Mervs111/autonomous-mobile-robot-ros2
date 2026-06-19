@@ -27,17 +27,17 @@ def generate_launch_description():
         nav2_bringup_share, 'launch', 'navigation_launch.py'
     )
 
-    # Remap /cmd_vel -> /cmd_vel_nav so failover_controller can arbitrate.
-    nav2_with_remap = GroupAction([
-        SetRemap(src='/cmd_vel', dst='/cmd_vel_nav'),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(nav2_launch),
-            launch_arguments={
-                'use_sim_time':    'false',
-                'params_file':     nav2_params,
-                'autostart':       'true',
-            }.items(),
-        ),
-    ])
+    # CATATAN: remap /cmd_vel -> /cmd_vel_nav DIHAPUS untuk demo TANPA failover.
+    # Nav2 publish LANGSUNG ke /cmd_vel yang didengar stm32_bridge.
+    # (Kalau mau pakai failover lagi, kembalikan:
+    #   GroupAction([SetRemap(src='/cmd_vel', dst='/cmd_vel_nav'), IncludeLaunchDescription(...)]) )
+    nav2_stack = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(nav2_launch),
+        launch_arguments={
+            'use_sim_time':    'false',
+            'params_file':     nav2_params,
+            'autostart':       'true',
+        }.items(),
+    )
 
-    return LaunchDescription([nav2_with_remap])
+    return LaunchDescription([nav2_stack])
