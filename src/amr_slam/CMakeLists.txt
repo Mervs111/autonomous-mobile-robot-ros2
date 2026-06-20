@@ -16,6 +16,7 @@ install(PROGRAMS
   scripts/log_localization.py
   scripts/reset_odom.sh
   scripts/demo_drive_forward.sh
+  scripts/run_amr_demo.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 
