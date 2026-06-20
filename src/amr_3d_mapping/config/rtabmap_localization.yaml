@@ -40,9 +40,10 @@ rtabmap:
 
     Vis/FeatureType: "8"
     Vis/MaxFeatures: "1000"
-    # FIX: turunkan dari 15 → 10 (konsisten dgn mapping), supaya tidak gagal
-    # relocalize di area textureless.
-    Vis/MinInliers: "10"
+    # FIX 20 Jun: turunkan 10 → 6. MinInliers 10 bikin lock kedip (id 33 → 0)
+    # karena area sudah agak beda dgn saat mapping → fitur cocok tapi < 10
+    # inlier ditolak. 6 cukup buat lock stabil tanpa false positive.
+    Vis/MinInliers: "6"
 
     # Localization khusus: lebih banyak proximity check
     RGBD/ProximityBySpace: "true"
@@ -50,8 +51,12 @@ rtabmap:
     RGBD/LocalRadius: "5.0"
     RGBD/ProximityMaxGraphDepth: "50"
     RGBD/ProximityPathMaxNeighbors: "10"
-    Rtabmap/LoopThr: "0.11"
-    Rtabmap/DetectionRate: "1.0"
+    # FIX 20 Jun: LoopThr 0.11 → 0.05 (lebih agresif terima loop closure),
+    # DetectionRate 1.0 → 2.0 (cek 2x/detik → re-lock lebih cepat & nempel).
+    # Akar masalah "maju malah mundur": map->odom heading kebalik karena lock
+    # tidak stabil. Lock nempel = heading benar TANPA mapping ulang.
+    Rtabmap/LoopThr: "0.05"
+    Rtabmap/DetectionRate: "2.0"
 
     publish_cloud_obstacles: true
     publish_cloud_ground: true
