@@ -167,3 +167,54 @@ rviz2 -d /opt/ros/humble/share/nav2_bringup/rviz/nav2_default_view.rviz
 
 **Inti:** pipeline autonomous (sensor → lokalisasi → Nav2 → motor) **sudah tersambung
 penuh dan terbukti menggerakkan robot.** Sisanya = kualitas peta + tuning.
+
+---
+
+## 9. Update 20 Juni — Re-map + Temuan Heading/Steering Flip
+
+### Yang dilakukan
+- Layout E105 berubah → `lab_demo_18jun.db` nggak cocok → **re-map bersih** ke
+  `lab_demo_20jun.db` (1 loop, ~17 menit).
+- Localization lock berhasil (loop_closure_id > 0 ✅).
+- Nav2 planning jalan, goal via RViz diterima ✅.
+
+### Temuan: robot muter/belok salah arah
+Saat autonomous goal dikirim, robot muter jauh & belok ke arah salah. Tes manual:
+
+| Tes | Perintah | Hasil fisik | Verdict |
+|---|---|---|---|
+| Maju | `linear.x: 0.3` | Robot **maju** | ✅ benar |
+| RViz ikon | robot maju | ikon **mundur** | ❌ heading flip |
+| Belok | `angular.z: +0.5` (kiri) | robot **belok kanan** | ❌ steering kebalik |
+| Odom | maju | `/rtabmap/odom x` **naik** | ✅ VIO odom lokal benar |
+
+**Kesimpulan sementara:** heading di frame `map` ke-flip ~180° (robot tahu *tempat*
+tapi *arah hadap* kebalik). Kombinasi 2 kemungkinan:
+1. **Steering sign kebalik** di `stm32_bridge.cpp` → perintah belok kiri → roda depan
+   belok kanan → Nav2 koreksi ke arah salah → muter.
+2. **Heading lokalisasi flip 180°** → RTAB-Map lock posisi benar tapi orientasi kebalik.
+
+### Tes penentu (BELUM SELESAI — robot mati karena switch daya)
+```bash
+# Di bench (roda ngambang):
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}, angular: {z: 0.5}}"
+```
+**Lihat roda depan:**
+- Roda depan belok **KIRI** → servo benar → penyebab: heading lokalisasi flip
+- Roda depan belok **KANAN** → **steering sign kebalik di bridge** → fix: flip tanda
+  `steer_rad` di `cmd_vel_callback` (1 baris, rebuild ~2 menit)
+
+### Fix steering (kalau roda depan terbukti kebalik)
+Di [`src/amr_controller/src/stm32_bridge.cpp:187`](../src/amr_controller/src/stm32_bridge.cpp):
+```cpp
+// Sebelum (kebalik):
+double steer_rad = std::atan(WHEELBASE * w / v);
+// Sesudah (flip sign):
+double steer_rad = -std::atan(WHEELBASE * w / v);
+```
+Lalu rebuild: `colcon build --symlink-install --packages-select amr_controller`
+
+### Fix heading lokalisasi (kalau servo terbukti benar)
+Taruh robot **persis di titik & arah START waktu mapping** lalu restart T2 localization.
+RTAB-Map ambil pose awal dari origin peta — kalau orientasi fisik sama dengan saat
+mapping, heading langsung benar dari awal.
