@@ -109,7 +109,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        # FIX 21 Jun malam: 0.15 -> 0.10, kasih ruang lebih untuk RPP follow path
+        inflation_radius: 0.10
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: true
@@ -126,10 +127,13 @@ local_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
+          # FIX 21 Jun malam: min_range 0.0 -> 0.3 supaya LiDAR tidak salah baca
+          # frame robot sendiri (RPLidar A1 min_range fisik 0.15m, tapi balikan
+          # rendah < 0.3m biasanya echo dari chassis/roda) sebagai obstacle hantu.
           raytrace_max_range: 10.0
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.3
           obstacle_max_range: 8.0
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.3
         depth_scan:
           topic: /depth_scan
           max_obstacle_height: 1.5
@@ -169,10 +173,11 @@ global_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
+          # FIX 21 Jun malam: min_range 0.0 -> 0.3 (filter robot self-scan)
           raytrace_max_range: 10.0
-          raytrace_min_range: 0.0
+          raytrace_min_range: 0.3
           obstacle_max_range: 8.0
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.3
         depth_scan:
           topic: /depth_scan
           max_obstacle_height: 1.5
@@ -190,7 +195,8 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.15
+        # FIX 21 Jun malam: 0.15 -> 0.10, kasih ruang lebih
+        inflation_radius: 0.10
       always_send_full_costmap: true
 
 planner_server:
